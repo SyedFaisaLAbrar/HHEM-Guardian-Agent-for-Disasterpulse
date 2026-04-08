@@ -1,5 +1,8 @@
 DEPLOYMENT_GUIDE.md
 data/crisis_mmd/*
+data/chroma_db/*
+app/__pycache__/
+app/data
 __pycache__/
 venv/*
 
