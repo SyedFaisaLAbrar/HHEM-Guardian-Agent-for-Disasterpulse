@@ -3,6 +3,7 @@ data/crisis_mmd/*
 data/chroma_db/*
 app/__pycache__/
 app/data
+app/.env
 __pycache__/
 venv/*
 
