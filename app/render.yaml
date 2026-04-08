@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: disasterpulse-api
+    env: python
+    buildCommand: pip install -r app/requirements.txt && python -m spacy download en_core_web_sm
+    startCommand: cd app && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false

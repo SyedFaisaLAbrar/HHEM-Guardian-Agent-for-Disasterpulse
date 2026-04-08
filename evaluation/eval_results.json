@@ -1,0 +1,59 @@
+{
+  "retrieval": {
+    "ndcg_at_k": {
+      "1": 1.0,
+      "3": 0.966,
+      "5": 0.945,
+      "10": 0.921
+    },
+    "mrr": 1.0,
+    "queries_evaluated": 200
+  },
+  "classifier": {
+    "per_class": {
+      "HURRICANE": {
+        "precision": 0.981,
+        "recall": 0.798,
+        "f1": 0.88
+      },
+      "WILDFIRE": {
+        "precision": 1.0,
+        "recall": 0.973,
+        "f1": 0.986
+      },
+      "FLOOD": {
+        "precision": 0.545,
+        "recall": 0.75,
+        "f1": 0.632
+      },
+      "CRISISLEXREC": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "EARTHQUAKE": {
+        "precision": 1.0,
+        "recall": 0.923,
+        "f1": 0.96
+      }
+    },
+    "macro_f1": 0.692
+  },
+  "severity_distribution": {
+    "high": {
+      "count": 95,
+      "pct": 48
+    },
+    "low": {
+      "count": 71,
+      "pct": 36
+    },
+    "medium": {
+      "count": 34,
+      "pct": 17
+    }
+  },
+  "corpus_size": 15302,
+  "eval_queries": 200,
+  "note": "RAG nDCG computed from CrisisMMD damage severity labels as relevance grades. Classifier F1 from keyword matching baseline."
+}

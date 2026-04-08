@@ -1,0 +1,28 @@
+DEPLOYMENT_GUIDE.md
+data/crisis_mmd/*
+data/chroma_db/*
+app/__pycache__/
+app/data
+app/.env
+__pycache__/
+venv
+
+# Frontend (Next.js / Node)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.turbo/
+
+# Frontend env files (keep env.example tracked)
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Frontend logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
