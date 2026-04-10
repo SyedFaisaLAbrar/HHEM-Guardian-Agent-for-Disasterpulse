@@ -34,7 +34,7 @@ This document details deploying DisasterPulse backend to **DigitalOcean App Plat
 
 | Setting | Value |
 |---------|-------|
-| Repository | `SyedFaisaLAbrar/DisasterPulse-...` |
+| Repository | `<your-github-username>/DisasterPulse` |
 | Branch | `main` |
 | Auto-deploy | ✓ Enabled |
 
