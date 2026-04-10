@@ -25,7 +25,14 @@ export async function apiFetch(path: string, options?: RequestInit) {
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${getApiBase()}/health`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+    
+    const res = await fetch(`${getApiBase()}/health`, {
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
     return res.ok;
   } catch {
     return false;

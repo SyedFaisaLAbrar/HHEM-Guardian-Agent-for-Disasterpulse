@@ -28,13 +28,39 @@ export function ApiProvider({ children }: { children: React.ReactNode }) {
     const ok = await checkHealth();
     setOnline(ok);
     setStatus(ok ? 'System Online' : 'System Offline');
+    
+    // If connection succeeds and URL came from env var, persist it to localStorage
+    if (ok && target) {
+      setApiBase(target);
+    }
     return ok;
   }, []);
 
-  useEffect(() => {
-    setBase(getApiBase());
-    ping();
+  const retryPing = useCallback(async (base?: string, retries = 3) => {
+    let lastError;
+    for (let i = 0; i < retries; i++) {
+      try {
+        const ok = await ping(base);
+        if (ok) return ok;
+      } catch (err) {
+        lastError = err;
+      }
+      // Wait before retrying (exponential backoff: 1s, 2s, 4s)
+      if (i < retries - 1) {
+        await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+      }
+    }
+    return false;
   }, [ping]);
+
+  useEffect(() => {
+    const initApi = async () => {
+      const base = getApiBase();
+      setBase(base);
+      await retryPing(base);
+    };
+    initApi();
+  }, [retryPing]);
 
   const updateApiBase = useCallback(async (url: string) => {
     const clean = url.replace(/\/$/, '');
