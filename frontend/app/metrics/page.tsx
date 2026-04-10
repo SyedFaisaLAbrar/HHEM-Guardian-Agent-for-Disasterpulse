@@ -175,8 +175,8 @@ function MetricsContent() {
             </div>
             <div style={{ padding: '20px' }}>
               {[
-                { label: 'Language Model', value: 'llama3.1:8b (Ollama)' },
-                { label: 'Vision Model', value: 'llava:7b (Ollama)' },
+                { label: 'Language Model', value: 'Llama 3.1 8B Instant (Groq)' },
+                { label: 'Vision Model', value: 'Llama 4 Scout 17B 16E (Groq)' },
                 { label: 'Embeddings', value: 'all-MiniLM-L6-v2' },
                 { label: 'Vector Store', value: 'ChromaDB' },
                 { label: 'Orchestration', value: 'LangGraph Agent' }
