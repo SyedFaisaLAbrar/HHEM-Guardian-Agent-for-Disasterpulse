@@ -105,7 +105,7 @@ function HHEMPanel({ hhem, originalSummary }: { hhem: HHEMResult; originalSummar
             }}
           >
             <span style={{ fontSize: '14px' }}>{open ? '▾' : '▸'}</span>
-            ⚠️ Hallucination detected & corrected
+            Hallucination detected & corrected
           </button>
 
           {open && (
@@ -177,7 +177,7 @@ function HHEMPanel({ hhem, originalSummary }: { hhem: HHEMResult; originalSummar
                 lineHeight: '1.4',
                 fontStyle: 'italic',
               }}>
-                💡 The original draft was flagged during generation. This corrected version removes unsupported claims and focuses on verified context.
+                Insights: The original draft was flagged during generation. This corrected version removes unsupported claims and focuses on verified context.
               </div>
             </div>
           )}
