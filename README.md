@@ -9,7 +9,7 @@ assessment via LLaVA-class VLM.
 
 ## Architecture
 
-![DisasterPulse Pipeline](docs/architecture_diagram.png)
+![DisasterPulse Pipeline](docs/HHEM_Disasterpulse.png)
 
 
 > 7-node LangGraph agentic pipeline with hallucination guard. Flow: text/image input → classifier → location extractor → RAG retriever → router decision → optional VLM analysis → **HHEM hallucination guard** → report synthesis
