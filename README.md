@@ -12,18 +12,19 @@ assessment via LLaVA-class VLM.
 ![DisasterPulse Pipeline](docs/architecture_diagram.png)
 
 
-> 6-node LangGraph agentic pipeline. Flow: text/image input → classifier → location extractor → RAG retriever → router decision → optional VLM analysis → report synthesis
+> 7-node LangGraph agentic pipeline with hallucination guard. Flow: text/image input → classifier → location extractor → RAG retriever → router decision → optional VLM analysis → **HHEM hallucination guard** → report synthesis
 
 ## Pipeline
 
-Six LangGraph nodes process each event end-to-end:
+Seven LangGraph nodes process each event end-to-end:
 
 1. **Classifier** — llama-3.1-8b via Groq classifies disaster type and severity
 2. **Location extractor** — spaCy NER identifies affected regions  
 3. **RAG retriever** — ChromaDB semantic search pulls top-5 similar historical events
 4. **Router** — decides whether image analysis is warranted
 5. **VLM captioner** — Groq vision model assesses structural damage from uploaded images
-6. **Report generator** — llama-3.1-8b synthesizes all signals into actionable JSON report
+6. **HHEM Guard** ← **NEW** — Vectara HHEM-2.1-Open detects hallucinations in generated summaries and auto-corrects if needed (score < 0.5 threshold)
+7. **Report generator** — llama-3.1-8b synthesizes all signals into actionable JSON report with HHEM metadata
 
 ## Datasets
 
@@ -48,11 +49,39 @@ uses a keyword-matching baseline for reproducibility.
 
 ## Stack
 
-Backend: FastAPI · LangGraph · ChromaDB · spaCy · Groq API  
+Backend: FastAPI · LangGraph · ChromaDB · spaCy · Groq API · **Vectara HHEM-2.1-Open** (hallucination detection)  
 Frontend: Next.js  
 Embeddings: all-MiniLM-L6-v2  
 LLM: llama-3.1-8b-instant (Groq)  
-VLM: llama-4-scout vision (Groq)
+VLM: llama-4-scout vision (Groq)  
+ML Framework: transformers (for HHEM model)
+
+## Hallucination Guard (HHEM)
+
+DisasterPulse now includes **Vectara HHEM-2.1-Open**, a state-of-the-art hallucination detector:
+
+- **Detects hallucinations** in generated event summaries by comparing against RAG context
+- **Scores consistency** on 0–1 scale; default threshold is 0.5
+- **Auto-corrects** flagged summaries via Groq LLM (re-grounds all claims to RAG evidence)
+- **Frontend integration**: "Vectara HHEM Guard" panel displays score, flags, and corrections in the UI
+- **Optional deployment**: Falls back gracefully if `transformers` is not installed
+
+**Configuration:**
+```python
+# In app/agents.py
+HHEM_THRESHOLD = 0.5  # Detection boundary: < 0.5 = hallucinated
+```
+
+**Metrics in API Response:**
+```json
+{
+  "hhem": {
+    "score": 0.82,
+    "triggered": false,
+    "correction": null
+  }
+}
+```
 
 ## Quick start
 
@@ -81,6 +110,8 @@ source venv/bin/activate
 pip install -r app/requirements.txt
 python -m spacy download en_core_web_sm
 \```
+
+**Note:** HHEM hallucination detection is included but **optional**. If `transformers` or `torch` fail to install, the pipeline will skip hallucination detection and operate normally. For full HHEM support, ensure you have a GPU or sufficient disk space for model downloads.
 
 ### 4. Configure API Keys
 
@@ -121,6 +152,12 @@ npm run dev
 \```
 
 Frontend runs at: http://localhost:3000
+
+**Frontend Enhancements (HHEM Edition):**
+- The `/analyze` page now displays the **Vectara HHEM Guard** panel in real-time
+- Shows hallucination consistency score (0–100%)
+- Displays auto-corrected summaries when inconsistencies are detected
+- Falls back gracefully if HHEM model is unavailable on the backend
 
 ## Related work
 
