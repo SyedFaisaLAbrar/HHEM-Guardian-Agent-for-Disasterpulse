@@ -14,6 +14,11 @@ assessment via LLaVA-class VLM.
 
 > 7-node LangGraph agentic pipeline with hallucination guard. Flow: text/image input → classifier → location extractor → RAG retriever → router decision → optional VLM analysis → **HHEM hallucination guard** → report synthesis
 
+## Correction sample
+
+![DisasterPulse Pipeline](docs/sample_hallucination.png)
+
+
 ## Pipeline
 
 Seven LangGraph nodes process each event end-to-end:

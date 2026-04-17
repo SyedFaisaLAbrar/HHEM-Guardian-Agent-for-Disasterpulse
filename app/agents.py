@@ -384,17 +384,18 @@ def node_hhem_guard(state: PipelineState) -> PipelineState:
     """Improved: First create a clean short draft summary, then score + correct."""
     
     # ── Step 1: Create a proper short draft summary (this was missing) ───────
-    draft_prompt = f"""Create a 1-2 sentence factual summary of the disaster event.
-Use only the information below. Be concise and natural.
+    draft_prompt = f"""Create a short, complete, clear factual sentence summary of the disaster event.
+        Do NOT ask questions. Do NOT speculate about "similar events in last decade".
+        Stick strictly to the facts below.
 
-Raw text: {state['raw_text'][:600]}
-Disaster types: {', '.join(state.get('disaster_types', []))}
-Severity: {state.get('severity', 'unknown')}
-Locations: {', '.join(l['name'] for l in state.get('locations', []))}
-RAG context: {' '.join([h['text'][:200] for h in state.get('rag_context', [])[:2]])}
-VLM caption: {state.get('vlm_caption', '')}
+        Raw text: {state['raw_text'][:500]}
+        Disaster types: {', '.join(state.get('disaster_types', []))}
+        Severity: {state.get('severity', 'unknown')}
+        Locations: {', '.join(l['name'] for l in state.get('locations', []))}
+        RAG context: {' '.join([h['text'][:250] for h in state.get('rag_context', [])[:2]])}
+        VLM caption: {state.get('vlm_caption', '') or 'None'}
 
-Summary:"""
+        Summary:"""
 
     llm = ChatGroq(model=GROQ_MODEL_TEXT, temperature=0, api_key=os.getenv("GROQ_API_KEY"))
     draft_response = llm.invoke([HumanMessage(content=draft_prompt)])
