@@ -308,31 +308,103 @@ Remove or correct any statement not found in the context.
 Output only the corrected summary text — no JSON, no markdown, no explanation."""
 
 
-def node_hhem_guard(state: PipelineState) -> PipelineState:
-    """
-    Node 6 — Vectara HHEM-2.1-Open hallucination guard.
+# def node_hhem_guard(state: PipelineState) -> PipelineState:
+#     """
+#     Node 6 — Vectara HHEM-2.1-Open hallucination guard.
 
-    Steps:
-      1. Generate a short draft summary from the current state (before full report).
-      2. Score it against the retrieved context with HHEM.
-      3. If score < HHEM_THRESHOLD → auto-correct via Groq and store result.
-      4. Pass hhem_score, hhem_triggered, hhem_correction into state for
-         the report generator and the API response.
-    """
+#     Steps:
+#       1. Generate a short draft summary from the current state (before full report).
+#       2. Score it against the retrieved context with HHEM.
+#       3. If score < HHEM_THRESHOLD → auto-correct via Groq and store result.
+#       4. Pass hhem_score, hhem_triggered, hhem_correction into state for
+#          the report generator and the API response.
+#     """
     
-    # ── Step 1: build a short draft to score ───────────────────────────────────
-    draft = (
-        f"Disaster type: {', '.join(state.get('disaster_types', []))}. "
-        f"Severity: {state.get('severity', 'unknown')}. "
-        f"Locations: {', '.join(l['name'] for l in state.get('locations', []))}. "
-        f"{state['raw_text'][:300]}"
-    )
-    premise = _build_premise(state)
+#     # ── Step 1: build a short draft to score ───────────────────────────────────
+#     draft = (
+#         f"Disaster type: {', '.join(state.get('disaster_types', []))}. "
+#         f"Severity: {state.get('severity', 'unknown')}. "
+#         f"Locations: {', '.join(l['name'] for l in state.get('locations', []))}. "
+#         f"{state['raw_text'][:300]}"
+#     )
+#     premise = _build_premise(state)
 
-    # ── Step 2: HHEM score ─────────────────────────────────────────────────────
+#     # ── Step 2: HHEM score ─────────────────────────────────────────────────────
+#     hhem_score = None
+#     model      = _get_hhem()
+
+#     if model is not None:
+#         try:
+#             import torch
+#             with torch.no_grad():
+#                 scores = model.predict([(premise, draft)])
+#             hhem_score = float(scores[0].item())
+#         except Exception as e:
+#             print(f"[HHEM] Scoring error: {e}")
+
+#     # ── Step 3: auto-correct if triggered ─────────────────────────────────────
+#     hhem_triggered  = False
+#     hhem_correction = None
+
+#     needs_correction = (hhem_score is not None and hhem_score < HHEM_THRESHOLD)
+
+#     if needs_correction:
+#         hhem_triggered = True
+#         try:
+#             llm = ChatGroq(model=GROQ_MODEL_TEXT, temperature=0,
+#                            api_key=os.getenv("GROQ_API_KEY"))
+#             correction_prompt = (
+#                 f"CONTEXT:\n{premise}\n\n"
+#                 f"DRAFT SUMMARY:\n{draft}\n\n"
+#                 f"Rewrite the draft so every claim is supported by the context only."
+#             )
+#             resp = llm.invoke([
+#                 SystemMessage(content=CORRECTION_SYSTEM),
+#                 HumanMessage(content=correction_prompt),
+#             ])
+#             hhem_correction = resp.content.strip()
+#             print(f"[HHEM] Score {hhem_score:.3f} < {HHEM_THRESHOLD} → correction applied.")
+#         except Exception as e:
+#             print(f"[HHEM] Correction LLM error: {e}")
+#     else:
+#         score_str = f"{hhem_score:.3f}" if hhem_score is not None else "N/A (model unavailable)"
+#         print(f"[HHEM] Score {score_str} — no correction needed.")
+
+#     return {
+#         **state,
+#         "hhem_score":           hhem_score,
+#         "hhem_triggered":       hhem_triggered,
+#         "hhem_correction":      hhem_correction,
+#         "hhem_original_draft":  draft,  # Store original draft for frontend comparison
+#     }
+
+# ── Node 6: HHEM Hallucination Guard (Improved) ───────────────────────────────
+
+def node_hhem_guard(state: PipelineState) -> PipelineState:
+    """Improved: First create a clean short draft summary, then score + correct."""
+    
+    # ── Step 1: Create a proper short draft summary (this was missing) ───────
+    draft_prompt = f"""Create a 1-2 sentence factual summary of the disaster event.
+Use only the information below. Be concise and natural.
+
+Raw text: {state['raw_text'][:600]}
+Disaster types: {', '.join(state.get('disaster_types', []))}
+Severity: {state.get('severity', 'unknown')}
+Locations: {', '.join(l['name'] for l in state.get('locations', []))}
+RAG context: {' '.join([h['text'][:200] for h in state.get('rag_context', [])[:2]])}
+VLM caption: {state.get('vlm_caption', '')}
+
+Summary:"""
+
+    llm = ChatGroq(model=GROQ_MODEL_TEXT, temperature=0, api_key=os.getenv("GROQ_API_KEY"))
+    draft_response = llm.invoke([HumanMessage(content=draft_prompt)])
+    draft = draft_response.content.strip()
+
+    premise = _build_premise(state)   # your existing helper (good)
+
+    # ── Step 2: Score with HHEM ───────────────────────────────────────────────
     hhem_score = None
-    model      = _get_hhem()
-
+    model = _get_hhem()
     if model is not None:
         try:
             import torch
@@ -342,40 +414,35 @@ def node_hhem_guard(state: PipelineState) -> PipelineState:
         except Exception as e:
             print(f"[HHEM] Scoring error: {e}")
 
-    # ── Step 3: auto-correct if triggered ─────────────────────────────────────
-    hhem_triggered  = False
+    # ── Step 3: Auto-correct only if needed ───────────────────────────────────
+    hhem_triggered = False
     hhem_correction = None
 
-    needs_correction = (hhem_score is not None and hhem_score < HHEM_THRESHOLD)
-
-    if needs_correction:
+    if hhem_score is not None and hhem_score < HHEM_THRESHOLD:
         hhem_triggered = True
+        correction_prompt = (
+            f"CONTEXT (only trusted facts):\n{premise}\n\n"
+            f"DRAFT SUMMARY (may contain unsupported claims):\n{draft}\n\n"
+            f"Rewrite the draft into a clean, natural 1-2 sentence summary. "
+            f"Remove or fix anything not directly supported by the context. "
+            f"Keep it factual and ready for humanitarian responders."
+        )
         try:
-            llm = ChatGroq(model=GROQ_MODEL_TEXT, temperature=0,
-                           api_key=os.getenv("GROQ_API_KEY"))
-            correction_prompt = (
-                f"CONTEXT:\n{premise}\n\n"
-                f"DRAFT SUMMARY:\n{draft}\n\n"
-                f"Rewrite the draft so every claim is supported by the context only."
-            )
             resp = llm.invoke([
                 SystemMessage(content=CORRECTION_SYSTEM),
                 HumanMessage(content=correction_prompt),
             ])
             hhem_correction = resp.content.strip()
-            print(f"[HHEM] Score {hhem_score:.3f} < {HHEM_THRESHOLD} → correction applied.")
+            print(f"[HHEM] Score {hhem_score:.3f} → correction applied")
         except Exception as e:
-            print(f"[HHEM] Correction LLM error: {e}")
-    else:
-        score_str = f"{hhem_score:.3f}" if hhem_score is not None else "N/A (model unavailable)"
-        print(f"[HHEM] Score {score_str} — no correction needed.")
+            print(f"[HHEM] Correction failed: {e}")
 
     return {
         **state,
-        "hhem_score":           hhem_score,
-        "hhem_triggered":       hhem_triggered,
-        "hhem_correction":      hhem_correction,
-        "hhem_original_draft":  draft,  # Store original draft for frontend comparison
+        "hhem_score":          hhem_score,
+        "hhem_triggered":      hhem_triggered,
+        "hhem_correction":     hhem_correction,
+        "hhem_original_draft": draft,          # ← now a clean summary
     }
 
 
@@ -408,8 +475,9 @@ Severity rules:
 
 
 def node_report_generator(state: PipelineState) -> PipelineState:
-    """Node 7: synthesize all signals into a final structured report."""
-    
+    """Node 7: synthesize all signals into a final structured report.
+    Now intelligently uses HHEM-corrected summary when available."""
+
     rag_summary = ""
     if state.get("rag_context"):
         rag_summary = "Similar past events:\n" + "\n".join(
@@ -422,31 +490,39 @@ def node_report_generator(state: PipelineState) -> PipelineState:
     if state.get("vlm_caption"):
         vlm_summary = f"\nImage analysis:\n{state['vlm_caption']}"
 
-    # If HHEM produced a correction, surface it as additional context
-    hhem_note = ""
+    # ── NEW: Use HHEM correction as the source of truth ─────────────────────
     if state.get("hhem_triggered") and state.get("hhem_correction"):
+        final_summary = state["hhem_correction"]
         hhem_note = (
-            f"\nHHEM Hallucination Guard flagged low consistency "
-            f"(score={state['hhem_score']:.3f}). "
-            f"Corrected summary:\n{state['hhem_correction']}"
+            f"\nHHEM Guard applied correction (score: {state.get('hhem_score'):.3f})"
+        )
+    else:
+        # If no correction needed, still create a clean draft for the report
+        final_summary = state.get("hhem_original_draft") or state["raw_text"][:400]
+        hhem_note = (
+            f"\nHHEM score: {state.get('hhem_score'):.3f} — no correction needed"
         )
 
     prompt = f"""Generate a disaster intelligence report from this data:
 
-ORIGINAL TEXT: {state['raw_text'][:500]}
+        ORIGINAL TEXT: {state['raw_text'][:500]}
 
-INITIAL ASSESSMENT:
-- Disaster types: {state.get('disaster_types', [])}
-- Preliminary severity: {state.get('severity', 'unknown')}
-- Locations: {[l['name'] for l in state.get('locations', [])]}
+        INITIAL ASSESSMENT:
+        - Disaster types: {state.get('disaster_types', [])}
+        - Preliminary severity: {state.get('severity', 'unknown')}
+        - Locations: {[l['name'] for l in state.get('locations', [])]}
 
-ADDITIONAL EVIDENCE:
-{rag_summary}
-{vlm_summary}
-{hhem_note}
+        ADDITIONAL EVIDENCE:
+        {rag_summary}
+        {vlm_summary}
+        {hhem_note}
 
-Based on ALL evidence, generate the final disaster intelligence report.
-Output the JSON now:"""
+        FINAL SUMMARY TO USE (already HHEM-checked):
+        {final_summary}
+
+        Based on ALL evidence above, generate the final disaster intelligence report.
+        Use the FINAL SUMMARY above as the base for "event_summary".
+        Output the JSON now:"""
 
     llm = ChatGroq(model=GROQ_MODEL_TEXT, temperature=0,
                    api_key=os.getenv("GROQ_API_KEY"))
@@ -458,26 +534,24 @@ Output the JSON now:"""
         ])
         raw    = re.sub(r"```json|```", "", response.content).strip()
         report = json.loads(raw)
-        
+
+        # ── Force HHEM-corrected summary into the final report ───────────────
+        report["event_summary"] = final_summary
+
         print(f"[REPORT] Generated report keys: {list(report.keys())}")
 
-        # Validate and ensure required fields are present and non-empty
+        # Validate and ensure required fields
         if not report.get("disaster_types") or not isinstance(report.get("disaster_types"), list) or len(report.get("disaster_types", [])) == 0:
             report["disaster_types"] = state.get("disaster_types", []) or ["CRISISLEX_CRISISLEXREC"]
-            print(f"[REPORT] Set disaster_types from state: {report['disaster_types']}")
-        
+
         if not report.get("severity") or report.get("severity") == "unknown":
             if state.get("severity") and state.get("severity") != "unknown":
                 report["severity"] = state.get("severity")
             else:
-                report["severity"] = "medium"  # default to medium if truly unknown
-            print(f"[REPORT] Set severity: {report['severity']}")
-        
-        if not report.get("event_summary"):
-            report["event_summary"] = state["raw_text"][:300]
-        
+                report["severity"] = "medium"
+
         if not report.get("affected_locations"):
-            report["affected_locations"] = [l["name"] for l in state.get("locations", [])]
+            report["affected_locations"] = [l["name"] for l in state.get("locations", [])] or ["Unknown"]
 
         # Enrich with pipeline metadata
         report["rag_context_count"] = len(state.get("rag_context", []))
@@ -485,27 +559,22 @@ Output the JSON now:"""
         report["source_url"]        = state.get("source_url", "")
         report["image_path"]        = state.get("image_path", "")
 
-        # HHEM fields  ← NEW
+        # HHEM fields
         report["hhem_score"]             = state.get("hhem_score")
         report["hhem_triggered"]         = state.get("hhem_triggered", False)
         report["hhem_correction"]        = state.get("hhem_correction")
-        report["hhem_original_summary"]  = state.get("hhem_original_draft")  # for frontend UI comparison
+        report["hhem_original_summary"]  = state.get("hhem_original_draft")
 
         print(f"[REPORT] Final report severity: {report.get('severity')}, types: {report.get('disaster_types')}")
         return {**state, "final_report": report}
 
     except Exception as e:
-        # Use classifier results or defaults if LLM fails
-        disaster_types_fallback = state.get("disaster_types", [])
-        if not disaster_types_fallback or len(disaster_types_fallback) == 0:
-            disaster_types_fallback = ["CRISISLEX_CRISISLEXREC"]
-        
-        severity_fallback = state.get("severity", "unknown")
-        if severity_fallback == "unknown":
-            severity_fallback = "medium"  # default to medium if truly unknown
-        
+        # Fallback (kept almost the same)
+        disaster_types_fallback = state.get("disaster_types", []) or ["CRISISLEX_CRISISLEXREC"]
+        severity_fallback = state.get("severity", "medium")
+
         fallback = {
-            "event_summary":            state["raw_text"][:300],
+            "event_summary":            final_summary,   # ← still uses corrected version
             "disaster_types":           disaster_types_fallback,
             "severity":                 severity_fallback,
             "affected_locations":       [l["name"] for l in state.get("locations", [])] or ["Unknown"],
@@ -523,7 +592,6 @@ Output the JSON now:"""
         }
         print(f"[REPORT] Fallback generated due to error: {e}")
         return {**state, "final_report": fallback}
-
 
 # ── Graph Assembly ──────────────────────────────────────────────────────────────
 
