@@ -45,8 +45,9 @@ interface HHEMResult {
   correction: string | null;
 }
 
-function HHEMPanel({ hhem }: { hhem: HHEMResult }) {
+function HHEMPanel({ hhem, originalSummary }: { hhem: HHEMResult; originalSummary?: string }) {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<'before' | 'after'>('before');
 
   const barWidth  = hhem.score !== null ? `${Math.round(hhem.score * 100)}%` : '0%';
   const barColor  = (hhem.score ?? 0) >= 0.5 ? '#16a34a' : '#dc2626';
@@ -93,27 +94,91 @@ function HHEMPanel({ hhem }: { hhem: HHEMResult }) {
 
       {/* Correction section */}
       {hhem.triggered && hhem.correction && (
-        <div style={{ marginTop: '8px' }}>
+        <div style={{ marginTop: '10px' }}>
           <button
             onClick={() => setOpen((o: boolean) => !o)}
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
               background: 'none', border: 'none', cursor: 'pointer',
               fontSize: '12px', fontWeight: '600', color: '#dc2626', padding: 0,
+              marginBottom: '8px',
             }}
           >
             <span style={{ fontSize: '14px' }}>{open ? '▾' : '▸'}</span>
-            Auto-correction applied
+            ⚠️ Hallucination detected & corrected
           </button>
 
           {open && (
-            <div style={{
-              marginTop: '8px', padding: '10px 12px',
-              background: '#fff7f7', border: '1px solid #fecaca',
-              borderRadius: '6px', fontSize: '13px',
-              color: 'var(--text)', lineHeight: '1.5',
-            }}>
-              {hhem.correction}
+            <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Tabs */}
+              <div style={{ display: 'flex', gap: '6px', borderBottom: '1px solid var(--border)', paddingBottom: '6px' }}>
+                <button
+                  onClick={() => setTab('before')}
+                  style={{
+                    background: tab === 'before' ? '#dc2626' : 'transparent',
+                    color: tab === 'before' ? '#fff' : 'var(--text-muted)',
+                    border: 'none',
+                    borderRadius: '4px',
+                    padding: '4px 10px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                  }}
+                >
+                  Original (Flagged)
+                </button>
+                <button
+                  onClick={() => setTab('after')}
+                  style={{
+                    background: tab === 'after' ? '#16a34a' : 'transparent',
+                    color: tab === 'after' ? '#fff' : 'var(--text-muted)',
+                    border: 'none',
+                    borderRadius: '4px',
+                    padding: '4px 10px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                  }}
+                >
+                  Corrected
+                </button>
+              </div>
+
+              {/* Content */}
+              {tab === 'before' && originalSummary && (
+                <div style={{
+                  padding: '10px 12px',
+                  background: '#fef2f2', border: '1px solid #fecaca',
+                  borderRadius: '6px', fontSize: '13px',
+                  color: '#7f1d1d', lineHeight: '1.5',
+                }}>
+                  {originalSummary}
+                </div>
+              )}
+              {tab === 'after' && (
+                <div style={{
+                  padding: '10px 12px',
+                  background: '#f0fdf4', border: '1px solid #bbf7d0',
+                  borderRadius: '6px', fontSize: '13px',
+                  color: '#15803d', lineHeight: '1.5',
+                  fontWeight: '500',
+                }}>
+                  {hhem.correction}
+                </div>
+              )}
+
+              {/* Explanation note */}
+              <div style={{
+                padding: '8px 10px',
+                background: 'var(--bg-secondary)',
+                borderRadius: '4px',
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+                lineHeight: '1.4',
+                fontStyle: 'italic',
+              }}>
+                💡 The original draft was flagged during generation. This corrected version removes unsupported claims and focuses on verified context.
+              </div>
             </div>
           )}
         </div>
@@ -319,7 +384,33 @@ function AnalyzeContent() {
             Pipeline Output
           </div>
 
-          {result ? (
+          {loading ? (
+            // Always show loading animation when analyzing
+            <div style={{
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: '10px', padding: '40px 20px', textAlign: 'center',
+            }}>
+              <img
+                src="/images/ai.png" alt="Analysis" width="32" height="32"
+                style={{
+                  marginBottom: '16px', opacity: 1,
+                  filter: 'invert(1)', display: 'block', margin: '0 auto 16px',
+                  animation: 'pop 0.6s ease-in-out infinite',
+                  transformOrigin: 'center',
+                }}
+              />
+              <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+                Analyzing your event…
+              </p>
+              <style>{`
+                @keyframes pop {
+                  0%, 100% { transform: scale(1); }
+                  50%       { transform: scale(1.3); }
+                }
+              `}</style>
+            </div>
+          ) : result ? (
+            // Show results when analysis is complete
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
               {/* Summary */}
@@ -330,14 +421,28 @@ function AnalyzeContent() {
                 <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: '1.6', margin: '0 0 16px' }}>
                   {result.report?.event_summary || 'Analysis complete.'}
                 </p>
+                
+                {/* Error indicator if present */}
+                {result.report?.error && (
+                  <div style={{
+                    marginBottom: '12px', padding: '10px 12px',
+                    background: '#fef2f2', border: '1px solid #fecaca',
+                    borderRadius: '6px', fontSize: '11px', color: '#7f1d1d',
+                  }}>
+                    ⚠️ {result.report.error}
+                  </div>
+                )}
+                
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {/* Classification */}
                   <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '6px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-sub)', textTransform: 'uppercase', marginBottom: '6px' }}>
                       Classification
                     </div>
-                    <div style={{ fontSize: '14px', color: 'var(--text)' }}>
-                      {result.report?.disaster_types?.[0] || 'Unknown'}
+                    <div style={{ fontSize: '14px', color: 'var(--text)', fontWeight: '500' }}>
+                      {result.report?.disaster_types && result.report.disaster_types.length > 0 
+                        ? result.report.disaster_types[0].replace(/_/g, ' ').toLowerCase().split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+                        : 'Unknown'}
                     </div>
                   </div>
                   {/* Severity */}
@@ -345,8 +450,10 @@ function AnalyzeContent() {
                     <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-sub)', textTransform: 'uppercase', marginBottom: '6px' }}>
                       Severity
                     </div>
-                    <div style={{ fontSize: '14px', color: 'var(--text)' }}>
-                      {result.report?.severity || 'Unknown'}
+                    <div style={{ fontSize: '14px', color: 'var(--text)', fontWeight: '500' }}>
+                      {result.report?.severity 
+                        ? result.report.severity.charAt(0).toUpperCase() + result.report.severity.slice(1)
+                        : 'Unknown'}
                     </div>
                   </div>
                 </div>
@@ -358,10 +465,11 @@ function AnalyzeContent() {
               </div>
 
               {/* HHEM Panel ← NEW */}
-              <HHEMPanel hhem={hhem} />
+              <HHEMPanel hhem={hhem} originalSummary={result.report?.hhem_original_summary} />
 
             </div>
           ) : (
+            // Show empty state on initial load
             <div style={{
               background: 'var(--surface)', border: '1px solid var(--border)',
               borderRadius: '10px', padding: '40px 20px', textAlign: 'center',
@@ -369,21 +477,14 @@ function AnalyzeContent() {
               <img
                 src="/images/ai.png" alt="Analysis" width="32" height="32"
                 style={{
-                  marginBottom: '16px', opacity: loading ? 1 : 0.5,
+                  marginBottom: '16px', opacity: 0.5,
                   filter: 'invert(1)', display: 'block', margin: '0 auto 16px',
-                  animation: loading ? 'pop 0.6s ease-in-out infinite' : 'none',
                   transformOrigin: 'center',
                 }}
               />
               <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                {loading ? 'Analyzing your event…' : 'Submit an event to run the full analysis pipeline.'}
+                Submit an event to run the full analysis pipeline.
               </p>
-              <style>{`
-                @keyframes pop {
-                  0%, 100% { transform: scale(1); }
-                  50%       { transform: scale(1.3); }
-                }
-              `}</style>
             </div>
           )}
         </div>

@@ -7,7 +7,8 @@ const NODES = [
   { id: 3, icon: 'database.png', label: 'RAG' },
   { id: 4, icon: 'arrows.png', label: 'Router' },
   { id: 5, icon: 'ai.png', label: 'MULTIMODAL' },
-  { id: 6, icon: 'file.png', label: 'Report' },
+  { id: 6, icon: 'shield-check.png', label: 'HHEM' },
+  { id: 7, icon: 'file.png', label: 'Report' },
 ];
 
 export interface PipelineHandle {
@@ -23,22 +24,22 @@ const Pipeline = forwardRef<PipelineHandle>((_, ref) => {
   async function animate() {
     setActiveNode(null);
     setDoneNodes(new Set());
-    // Animate to node 5 (VLM) and PAUSE there
-    for (let i = 1; i <= 5; i++) {
+    // Animate through nodes 1-6 (stops at HHEM node 6) and PAUSE there
+    for (let i = 1; i <= 6; i++) {
       setActiveNode(i);
       if (i > 1) setDoneNodes(prev => new Set([...prev, i - 1]));
       await new Promise(r => setTimeout(r, 400));
     }
-    // Stop at VLM (node 5) - keep it active until report arrives
-    setActiveNode(5);
+    // Stop at HHEM (node 6) - keep it active until report arrives
+    setActiveNode(6);
   }
 
   async function completeReport() {
-    // Called after report API returns - complete nodes 5 & 6
-    setDoneNodes(new Set([1, 2, 3, 4, 5]));
-    setActiveNode(6);
-    await new Promise(r => setTimeout(r, 400));
+    // Called after report API returns - complete nodes 1-6 and move to final Report (node 7)
     setDoneNodes(new Set([1, 2, 3, 4, 5, 6]));
+    setActiveNode(7);
+    await new Promise(r => setTimeout(r, 400));
+    setDoneNodes(new Set([1, 2, 3, 4, 5, 6, 7]));
     setActiveNode(null);
   }
 
