@@ -63,6 +63,7 @@ class PipelineState(TypedDict):
     hhem_score:      Optional[float]   # 0–1, higher = more consistent
     hhem_triggered:  bool              # True if correction was attempted
     hhem_correction: Optional[str]     # corrected summary if triggered
+    hhem_original_draft: Optional[str] # original draft before correction (for UI display)
 
     final_report:    Optional[dict]
     error:           Optional[str]
@@ -103,22 +104,30 @@ def node_classifier(state: PipelineState) -> PipelineState:
         ])
         raw    = re.sub(r"```json|```", "", response.content).strip()
         parsed = json.loads(raw)
+        
+        print(f"[CLASSIFIER] Parsed: {parsed}")
 
-        if not parsed.get("is_disaster", True):
-            return {**state,
-                    "disaster_types": [],
-                    "severity":       "unknown",
-                    "error":          "not_disaster"}
-
+        # Process regardless of is_disaster flag - we'll classify everything
+        disaster_types = parsed.get("disaster_types", ["CRISISLEX_CRISISLEXREC"])
+        severity = parsed.get("severity", "unknown")
+        
+        # If marked as not_disaster but we still got types, use them
+        # If marked as not_disaster AND no types, still classify as CRISISLEX_CRISISLEXREC
+        if not disaster_types or disaster_types == []:
+            disaster_types = ["CRISISLEX_CRISISLEXREC"]
+        
+        print(f"[CLASSIFIER] Types: {disaster_types}, Severity: {severity}, is_disaster: {parsed.get('is_disaster', True)}")
+        
         return {**state,
-                "disaster_types": parsed.get("disaster_types", ["CRISISLEX_CRISISLEXREC"]),
-                "severity":       parsed.get("severity", "unknown")}
+                "disaster_types": disaster_types,
+                "severity":       severity}
 
     except Exception as e:
+        print(f"[CLASSIFIER] Error: {e}")
         return {**state,
                 "disaster_types": ["CRISISLEX_CRISISLEXREC"],
                 "severity":       "unknown",
-                "error":          f"classifier_error: {e}"}
+                "error":          f"classifier_error: {str(e)[:100]}"}
 
 
 # ── Node 2: Location Extractor ──────────────────────────────────────────────────
@@ -136,9 +145,6 @@ def _get_nlp():
 
 
 def node_location_extractor(state: PipelineState) -> PipelineState:
-    if state.get("error") == "not_disaster":
-        return state
-
     nlp = _get_nlp()
     if nlp is None:
         return {**state, "locations": []}
@@ -159,9 +165,6 @@ def node_location_extractor(state: PipelineState) -> PipelineState:
 # ── Node 3: RAG Retriever ───────────────────────────────────────────────────────
 
 def node_rag_retriever(state: PipelineState) -> PipelineState:
-    if state.get("error") == "not_disaster":
-        return {**state, "rag_context": []}
-
     loc_names = " ".join(l["name"] for l in state.get("locations", []))
     type_str  = " ".join(t.replace("_", " ").lower()
                          for t in state.get("disaster_types", []))
@@ -316,12 +319,7 @@ def node_hhem_guard(state: PipelineState) -> PipelineState:
       4. Pass hhem_score, hhem_triggered, hhem_correction into state for
          the report generator and the API response.
     """
-    if state.get("error") == "not_disaster":
-        return {**state,
-                "hhem_score":      None,
-                "hhem_triggered":  False,
-                "hhem_correction": None}
-
+    
     # ── Step 1: build a short draft to score ───────────────────────────────────
     draft = (
         f"Disaster type: {', '.join(state.get('disaster_types', []))}. "
@@ -374,9 +372,10 @@ def node_hhem_guard(state: PipelineState) -> PipelineState:
 
     return {
         **state,
-        "hhem_score":      hhem_score,
-        "hhem_triggered":  hhem_triggered,
-        "hhem_correction": hhem_correction,
+        "hhem_score":           hhem_score,
+        "hhem_triggered":       hhem_triggered,
+        "hhem_correction":      hhem_correction,
+        "hhem_original_draft":  draft,  # Store original draft for frontend comparison
     }
 
 
@@ -410,9 +409,7 @@ Severity rules:
 
 def node_report_generator(state: PipelineState) -> PipelineState:
     """Node 7: synthesize all signals into a final structured report."""
-    if state.get("error") == "not_disaster":
-        return {**state, "final_report": {"error": "not_disaster_related"}}
-
+    
     rag_summary = ""
     if state.get("rag_context"):
         rag_summary = "Similar past events:\n" + "\n".join(
@@ -461,6 +458,26 @@ Output the JSON now:"""
         ])
         raw    = re.sub(r"```json|```", "", response.content).strip()
         report = json.loads(raw)
+        
+        print(f"[REPORT] Generated report keys: {list(report.keys())}")
+
+        # Validate and ensure required fields are present and non-empty
+        if not report.get("disaster_types") or not isinstance(report.get("disaster_types"), list) or len(report.get("disaster_types", [])) == 0:
+            report["disaster_types"] = state.get("disaster_types", []) or ["CRISISLEX_CRISISLEXREC"]
+            print(f"[REPORT] Set disaster_types from state: {report['disaster_types']}")
+        
+        if not report.get("severity") or report.get("severity") == "unknown":
+            if state.get("severity") and state.get("severity") != "unknown":
+                report["severity"] = state.get("severity")
+            else:
+                report["severity"] = "medium"  # default to medium if truly unknown
+            print(f"[REPORT] Set severity: {report['severity']}")
+        
+        if not report.get("event_summary"):
+            report["event_summary"] = state["raw_text"][:300]
+        
+        if not report.get("affected_locations"):
+            report["affected_locations"] = [l["name"] for l in state.get("locations", [])]
 
         # Enrich with pipeline metadata
         report["rag_context_count"] = len(state.get("rag_context", []))
@@ -469,20 +486,31 @@ Output the JSON now:"""
         report["image_path"]        = state.get("image_path", "")
 
         # HHEM fields  ← NEW
-        report["hhem_score"]      = state.get("hhem_score")
-        report["hhem_triggered"]  = state.get("hhem_triggered", False)
-        report["hhem_correction"] = state.get("hhem_correction")
+        report["hhem_score"]             = state.get("hhem_score")
+        report["hhem_triggered"]         = state.get("hhem_triggered", False)
+        report["hhem_correction"]        = state.get("hhem_correction")
+        report["hhem_original_summary"]  = state.get("hhem_original_draft")  # for frontend UI comparison
 
+        print(f"[REPORT] Final report severity: {report.get('severity')}, types: {report.get('disaster_types')}")
         return {**state, "final_report": report}
 
     except Exception as e:
+        # Use classifier results or defaults if LLM fails
+        disaster_types_fallback = state.get("disaster_types", [])
+        if not disaster_types_fallback or len(disaster_types_fallback) == 0:
+            disaster_types_fallback = ["CRISISLEX_CRISISLEXREC"]
+        
+        severity_fallback = state.get("severity", "unknown")
+        if severity_fallback == "unknown":
+            severity_fallback = "medium"  # default to medium if truly unknown
+        
         fallback = {
             "event_summary":            state["raw_text"][:300],
-            "disaster_types":           state.get("disaster_types", []),
-            "severity":                 state.get("severity", "unknown"),
-            "affected_locations":       [l["name"] for l in state.get("locations", [])],
-            "key_impacts":              [],
-            "response_recommendations": [],
+            "disaster_types":           disaster_types_fallback,
+            "severity":                 severity_fallback,
+            "affected_locations":       [l["name"] for l in state.get("locations", [])] or ["Unknown"],
+            "key_impacts":              ["Analysis incomplete"],
+            "response_recommendations": ["Contact local authorities for updates"],
             "confidence":               "low",
             "data_sources":             ["text_analysis"],
             "rag_context_count":        len(state.get("rag_context", [])),
@@ -490,16 +518,17 @@ Output the JSON now:"""
             "hhem_score":               state.get("hhem_score"),
             "hhem_triggered":           state.get("hhem_triggered", False),
             "hhem_correction":          state.get("hhem_correction"),
-            "error":                    f"report_llm_error: {e}",
+            "hhem_original_summary":    state.get("hhem_original_draft"),
+            "error":                    f"report_generation_error: {str(e)[:200]}",
         }
+        print(f"[REPORT] Fallback generated due to error: {e}")
         return {**state, "final_report": fallback}
 
 
 # ── Graph Assembly ──────────────────────────────────────────────────────────────
 
 def _should_continue(state: PipelineState) -> str:
-    if state.get("error") == "not_disaster":
-        return "report"
+    # Always continue to location extraction
     return "location"
 
 
@@ -551,20 +580,21 @@ def process_event(
     pipeline = get_pipeline()
 
     initial_state: PipelineState = {
-        "raw_text":       text,
-        "image_path":     image_path,
-        "source_url":     source_url,
-        "disaster_types": [],
-        "severity":       "unknown",
-        "locations":      [],
-        "rag_context":    [],
-        "needs_vlm":      False,
-        "vlm_caption":    None,
-        "hhem_score":     None,       # ← NEW
-        "hhem_triggered": False,      # ← NEW
-        "hhem_correction": None,      # ← NEW
-        "final_report":   None,
-        "error":          None,
+        "raw_text":             text,
+        "image_path":           image_path,
+        "source_url":           source_url,
+        "disaster_types":       [],
+        "severity":             "unknown",
+        "locations":            [],
+        "rag_context":          [],
+        "needs_vlm":            False,
+        "vlm_caption":          None,
+        "hhem_score":           None,       # ← NEW
+        "hhem_triggered":       False,      # ← NEW
+        "hhem_correction":      None,       # ← NEW
+        "hhem_original_draft":  None,       # ← NEW (stores original before correction)
+        "final_report":         None,
+        "error":                None,
     }
 
     result = pipeline.invoke(initial_state)

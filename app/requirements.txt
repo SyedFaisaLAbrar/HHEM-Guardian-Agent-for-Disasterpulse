@@ -13,7 +13,7 @@ sentence-transformers>=2.7.0   # pulls torch automatically
 spacy>=3.7.0
 # After install run: python -m spacy download en_core_web_sm
 # ── ML / Hallucination Detection ─────────────────────────────────────
-transformers>=4.37.0  # Vectara HHEM-2.1-Open (optional; gracefully skipped if not installed)
+transformers==4.41.2  # Vectara HHEM-2.1-Open (balanced version: compatible with sentence-transformers & HHEM)
 torch>=2.0.0
 # ── Agent layer ─────────────────────────────────────────────────────────────
 langchain>=0.3.0
