@@ -384,7 +384,7 @@ def node_hhem_guard(state: PipelineState) -> PipelineState:
     """Improved: First create a clean short draft summary, then score + correct."""
     
     # ── Step 1: Create a proper short draft summary (this was missing) ───────
-    draft_prompt = f"""Create a short, complete, clear factual sentence summary of the disaster event.
+    draft_prompt = f"""Create a accurate, complete, clear factual sentence summary of the disaster event.
         Do NOT ask questions. Do NOT speculate about "similar events in last decade".
         Stick strictly to the facts below.
 
